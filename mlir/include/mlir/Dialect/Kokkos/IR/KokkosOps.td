@@ -83,8 +83,8 @@ def SyncOp : Kokkos_Op<"sync"> {
     $view attr-dict `:` type($view)
   }];
 
-  let hasCanonicalizer = 1;
-  let hasFolder = 1;
+  let hasCanonicalizer = 0;
+  let hasFolder = 0;
 }
 
 def ModifyOp : Kokkos_Op<"modify"> {
@@ -100,8 +100,8 @@ def ModifyOp : Kokkos_Op<"modify"> {
     $view attr-dict `:` type($view)
   }];
 
-  let hasCanonicalizer = 1;
-  let hasFolder = 1;
+  let hasCanonicalizer = 0;
+  let hasFolder = 0;
 }
 
 // TODO: allow SingleOp to have results (broadcast mode)

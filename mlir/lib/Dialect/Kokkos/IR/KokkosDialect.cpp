@@ -249,20 +249,6 @@ LogicalResult ParallelOp::verify() {
   return success();
 }
 
-void ModifyOp::getCanonicalizationPatterns(RewritePatternSet &, MLIRContext *) {}
-
-LogicalResult ModifyOp::fold(FoldAdaptor, SmallVectorImpl<OpFoldResult>&) {
-  // Modify does not produce a result, so we can't use fold to merge multiple idempotent modifies
-  return success(false);
-}
-
-void SyncOp::getCanonicalizationPatterns(RewritePatternSet &, MLIRContext *) {}
-
-LogicalResult SyncOp::fold(FoldAdaptor, SmallVectorImpl<OpFoldResult>&) {
-  // Sync does not produce a result, so we can't use fold to merge multiple idempotent syncs
-  return success(false);
-}
-
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Kokkos/IR/KokkosOps.cpp.inc"
 
