@@ -31,7 +31,6 @@ namespace mlir {
 #define GEN_PASS_DEF_SPARSEBUFFERREWRITE
 #define GEN_PASS_DEF_SPARSEVECTORIZATION
 #define GEN_PASS_DEF_SPARSEGPUCODEGEN
-#define GEN_PASS_DEF_SPARSEKOKKOSCODEGEN
 #define GEN_PASS_DEF_STORAGESPECIFIERTOLLVM
 #include "mlir/Dialect/SparseTensor/Transforms/Passes.h.inc"
 } // namespace mlir
@@ -312,20 +311,6 @@ struct SparseGPUCodegenPass
   }
 };
 
-struct SparseKokkosCodegenPass
-    : public impl::SparseKokkosCodegenBase<SparseKokkosCodegenPass> {
-
-  SparseKokkosCodegenPass() = default;
-  SparseKokkosCodegenPass(const SparseKokkosCodegenPass& pass) = default;
-
-  void runOnOperation() override {
-    auto *ctx = &getContext();
-    RewritePatternSet patterns(ctx);
-    populateSparseKokkosCodegenPatterns(patterns);
-    (void) applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
-  }
-};
-
 struct StorageSpecifierToLLVMPass
     : public impl::StorageSpecifierToLLVMBase<StorageSpecifierToLLVMPass> {
 
@@ -457,10 +442,6 @@ std::unique_ptr<Pass> mlir::createSparseGPUCodegenPass() {
 
 std::unique_ptr<Pass> mlir::createSparseGPUCodegenPass(unsigned numThreads) {
   return std::make_unique<SparseGPUCodegenPass>(numThreads);
-}
-
-std::unique_ptr<Pass> mlir::createSparseKokkosCodegenPass() {
-  return std::make_unique<SparseKokkosCodegenPass>();
 }
 
 std::unique_ptr<Pass> mlir::createStorageSpecifierToLLVMPass() {

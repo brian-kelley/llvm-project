@@ -1,0 +1,15 @@
+set(LLVM_TARGET_DEFINITIONS KokkosOps.td)
+mlir_tablegen(KokkosOpsEnums.h.inc -gen-enum-decls)
+mlir_tablegen(KokkosOpsEnums.cpp.inc -gen-enum-defs)
+mlir_tablegen(KokkosAttrDefs.h.inc -gen-attrdef-decls --attrdefs-dialect=kokkos )
+mlir_tablegen(KokkosAttrDefs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=kokkos )
+add_public_tablegen_target(MLIRKokkosOpsAttributesIncGen)
+add_public_tablegen_target(MLIRKokkosAttrDefsIncGen)
+add_mlir_dialect(KokkosOps kokkos)
+
+#set(LLVM_TARGET_DEFINITIONS KokkosTypes.td)
+#mlir_tablegen(KokkosTypes.h.inc -gen-typedef-decls)
+#mlir_tablegen(KokkosTypes.cpp.inc -gen-typedef-defs)
+#add_public_tablegen_target(MLIRKokkosTypesIncGen)
+
+add_mlir_doc(KokkosOps KokkosOps Dialects/ -gen-dialect-doc)

@@ -1,4 +1,4 @@
-//===- Passes.h - Sparse tensor pipeline entry points -----------*- C++ -*-===//
+//===- Passes.h - Kokkos pipeline entry points -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -10,18 +10,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLIR_DIALECT_SPARSETENSOR_PIPELINES_PASSES_H_
-#define MLIR_DIALECT_SPARSETENSOR_PIPELINES_PASSES_H_
+#ifndef MLIR_KOKKOS_PIPELINES_PASSES_H_
+#define MLIR_KOKKOS_PIPELINES_PASSES_H_
 
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
 #include "mlir/Dialect/SparseTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/Pass/PassOptions.h"
 
 using namespace mlir::detail;
 using namespace llvm::cl;
 
 namespace mlir {
-namespace sparse_tensor {
+namespace kokkos {
 
 /// Options for the "sparse-compiler" pipeline.  So far this only contains
 /// a subset of the options that can be set for the underlying passes,
@@ -181,18 +182,17 @@ struct SparseCompilerOptions
 // Building and Registering.
 //===----------------------------------------------------------------------===//
 
-/// Adds the "sparse-compiler" pipeline to the `OpPassManager`.  This
+/// Adds the "sparse-compiler-kokkos" pipeline to the `OpPassManager`.  This
 /// is the standard pipeline for taking sparsity-agnostic IR using
-/// the sparse-tensor type and lowering it to LLVM IR with concrete
+/// the sparse-tensor type and lowering it to the Kokkos dialect with concrete
 /// representations and algorithms for sparse tensors.
-void buildSparseCompiler(OpPassManager &pm,
+void buildSparseKokkosCompiler(OpPassManager &pm,
                          const SparseCompilerOptions &options);
 
-/// Registers all pipelines for the `sparse_tensor` dialect.  At present,
-/// this includes only "sparse-compiler".
-void registerSparseTensorPipelines();
+/// Registers all pipelines for the `kokkos` dialect.
+void registerKokkosPipelines();
 
-} // namespace sparse_tensor
+} // namespace kokkos
 } // namespace mlir
 
-#endif // MLIR_DIALECT_SPARSETENSOR_PIPELINES_PASSES_H_
+#endif // MLIR_KOKKOS_PIPELINES_PASSES_H_

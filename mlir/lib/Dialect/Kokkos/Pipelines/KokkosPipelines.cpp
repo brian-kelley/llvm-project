@@ -1,4 +1,4 @@
-//===- SparseTensorKokkosPipelines.cpp - Pipelines for sparse tensor code -===//
+//===- KokkosPipelines.cpp - Pipelines using the Kokkos dialect for sparse and dense tensors) -===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/SparseTensor/Pipelines/Passes.h"
+#include "mlir/Dialect/Kokkos/Pipelines/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Arith/Transforms/Passes.h"
@@ -19,19 +19,21 @@
 #include "mlir/Dialect/PartTensor/Transforms/Passes.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/SparseTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Kokkos/IR/Kokkos.h"
+#include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace mlir;
-using namespace mlir::sparse_tensor;
+using namespace mlir::kokkos;
 
 //===----------------------------------------------------------------------===//
 // Pipeline implementation.
 //===----------------------------------------------------------------------===//
 
-void mlir::sparse_tensor::buildSparseKokkosCompiler(
+void mlir::kokkos::buildSparseKokkosCompiler(
     OpPassManager &pm, const SparseCompilerOptions &options) {
-  pm.addPass(createPartTensorConversionPass());
+  pm.addPass(::mlir::createPartTensorConversionPass());
   pm.addNestedPass<func::FuncOp>(createLinalgGeneralizationPass());
   pm.addPass(createSparsificationAndBufferizationPass(
       getBufferizationOptionsForSparsification(
@@ -57,11 +59,10 @@ void mlir::sparse_tensor::buildSparseKokkosCompiler(
 // Pipeline registration.
 //===----------------------------------------------------------------------===//
 
-void mlir::sparse_tensor::registerSparseTensorKokkosPipelines() {
+void mlir::kokkos::registerKokkosPipelines() {
   PassPipelineRegistration<SparseCompilerOptions>(
       "sparse-compiler-kokkos",
       "The standard pipeline for taking sparsity-agnostic IR using the"
-      " sparse-tensor type, and lowering it to dialects compatible with"
-      " the Kokkos emitter.",
+      " sparse-tensor type, and lowering it to dialects compatible with the Kokkos emitter",
       buildSparseKokkosCompiler);
 }

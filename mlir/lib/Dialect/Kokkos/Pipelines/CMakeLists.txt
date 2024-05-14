@@ -1,7 +1,8 @@
-add_mlir_dialect_library(MLIRSparseTensorKokkosPipelines
-SparseTensorKokkosPipelines.cpp
+add_mlir_dialect_library(MLIRKokkosPipelines
+  KokkosPipelines.cpp
 
   ADDITIONAL_HEADER_DIRS
+  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/Kokkos
   ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/SparseTensor
 
   LINK_LIBS PUBLIC
@@ -19,6 +20,8 @@ SparseTensorKokkosPipelines.cpp
   MLIRPass
   MLIRReconcileUnrealizedCasts
   MLIRSCFToControlFlow
+  MLIRKokkosDialect
+  MLIRKokkosTransforms
   MLIRSparseTensorDialect
   MLIRSparseTensorTransforms
   MLIRTensorTransforms

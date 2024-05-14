@@ -1,4 +1,4 @@
-//===- SparseKokkosCodegen.cpp - Generates Kokkos code --------------------===//
+//===- KokkosPatterns.cpp - Generates Kokkos code --------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "CodegenUtils.h"
-#include "LoopEmitter.h"
 
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
@@ -16,14 +15,12 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
-#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/SparseTensor/IR/SparseTensorType.h"
-#include "mlir/Dialect/SparseTensor/Transforms/Passes.h"
+#include "mlir/Dialect/Kokkos/IR/Kokkos.h"
+#include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 
 using namespace mlir;
-using namespace mlir::sparse_tensor;
 
 namespace {
 

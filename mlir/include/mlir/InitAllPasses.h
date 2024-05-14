@@ -23,6 +23,8 @@
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h"
 #include "mlir/Dialect/Func/Transforms/Passes.h"
 #include "mlir/Dialect/GPU/Transforms/Passes.h"
+#include "mlir/Dialect/Kokkos/Pipelines/Passes.h"
+#include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/Math/Transforms/Passes.h"
@@ -86,7 +88,7 @@ inline void registerAllPasses() {
   // Dialect pipelines
   part_tensor::registerPartTensorPipelines();
   sparse_tensor::registerSparseTensorPipelines();
-  sparse_tensor::registerSparseTensorKokkosPipelines();
+  kokkos::registerKokkosPipelines();
 }
 
 } // namespace mlir
