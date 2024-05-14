@@ -292,6 +292,14 @@ private:
     }
     return false;
   }
+
+  static bool isNestedIn(Block *block, kokkos::ParallelOp parOp) {
+    for (Operation *o = block->getParentOp(); o; o = o->getParentOp()) {
+      if (o == parOp)
+        return true;
+    }
+    return false;
+  }
 };
 
 } // namespace

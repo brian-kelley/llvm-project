@@ -11,6 +11,7 @@
 #define KOKKOS_OPS_H
 
 include "mlir/Dialect/Kokkos/IR/KokkosBase.td"
+include "mlir/Dialect/MemRef/IR/MemRefBase.td"
 include "mlir/IR/RegionKindInterface.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
@@ -18,6 +19,8 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/ParallelCombiningOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ViewLikeInterface.td"
+include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
 
 // Base class.
 class Kokkos_Op<string mnemonic, list<Trait> traits = []>
@@ -64,6 +67,41 @@ def ParallelOp : Kokkos_Op<"parallel",
   let hasCanonicalizer = 1;
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+}
+
+def SyncOp : Kokkos_Op<"sync"> {
+
+  let description = [{
+    For a memref with DualView memory space, sync its contents to the
+    provided memory space if it has been marked modified in the opposite space.
+  }];
+
+  let arguments = (ins Arg<AnyRankedOrUnrankedMemRef, "the memref to sync">:$view,
+                       Kokkos_MemorySpace:$memorySpace);
+
+  let assemblyFormat = [{
+    $view attr-dict `:` type($view)
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasFolder = 1;
+}
+
+def ModifyOp : Kokkos_Op<"modify"> {
+  let description = [{
+    For a memref with DualView memory space, mark its contents as modified
+    in the given space. This operation is idempotent.
+  }];
+
+  let arguments = (ins Arg<AnyRankedOrUnrankedMemRef, "the memref to mark modified">:$view,
+                       Kokkos_MemorySpace:$memorySpace);
+
+  let assemblyFormat = [{
+    $view attr-dict `:` type($view)
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasFolder = 1;
 }
 
 #endif // KOKKOS_OPS_H
