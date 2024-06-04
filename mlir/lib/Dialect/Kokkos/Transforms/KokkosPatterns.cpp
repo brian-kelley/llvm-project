@@ -24,287 +24,141 @@ using namespace mlir;
 
 namespace {
 
-// Enum representing memref access types.
-// This is meant to be used as a bitfield (READ | WRITE == READWRITE)
-enum MRAccess
+// Is v a compile-time constant integer with value 0?
+bool valueIsIntegerConstantZero(Value v)
 {
-  READ = 1,
-  WRITE = 2,
-  READWRITE = 3
-};
-
-//===----------------------------------------------------------------------===//
-// Helper methods.
-//===----------------------------------------------------------------------===//
-
-/// Constructs a new function for launching a Kokkos kernel.
-/// The Kokkos lambda can directly capture the arguments to this function,
-/// and nothing else. All memrefs are expected to be in device space
-/// (DefaultExecutionSpace::memory_space), not HostSpace.
-static func::FuncOp genKokkosFunc(OpBuilder &builder, ModuleOp module,
-                                 scf::ParallelOp forallOp, SmallVectorImpl<Value> &args) {
-  static unsigned kernelNumber = 0;
-  SmallString<16> kernelName;
-  ("kokkos_sparse_kernel_" + Twine(kernelNumber++)).toStringRef(kernelName);
-  // Then we insert a new kernel with given arguments into the module.
-  builder.setInsertionPointToStart(&module.getBodyRegion().front());
-  SmallVector<Type> argsTp;
-  for (unsigned i = 0, e = args.size(); i < e; i++)
-    argsTp.push_back(args[i].getType());
-  SmallVector<Type> resultsTp;
-  for (auto r : forallOp.getResults())
-    resultsTp.push_back(r.getType());
-  FunctionType type = FunctionType::get(builder.getContext(), argsTp, resultsTp);
-  func::FuncOp func = builder.create<func::FuncOp>(module.getLoc(), kernelName, type);
-  func.setPrivate();
-  // Add a body to the function (not done by default)
-  func.addEntryBlock();
-  return func;
-}
-
-/// Creates an uninitialized mirror of the given host view on device.
-static emitc::CallOp genCreateDeviceMirror(OpBuilder &builder, Location loc, Value mem) {
-  // Function signature:
-  // Kokkos::View<..., DeviceType> createDeviceMirror(Kokkos::View<..., HostType>)
-  // In MLIR, result and arg have the same type though (memrefs, with no explicit memory space)
-  return builder.create<emitc::CallOp>(loc, TypeRange({mem.getType()}), "createDeviceMirror", ArrayAttr(), ArrayAttr(), ValueRange({mem}));
-}
-
-/// Deallocates memory from the device.
-static void genDestroyDeviceMirror(OpBuilder &builder, Location loc, Value devMem, Value hostMem) {
-  // This function will deallocate (assign to empty View) the mirror devMem, if it is a different allocation than hostMem.
-  builder.create<emitc::CallOp>(loc, TypeRange(), "destroyDeviceMirror", ArrayAttr(), ArrayAttr(), ValueRange({devMem, hostMem}));
-}
-
-/// Copies memory between host and device (direction is implicit).
-static void genDeepCopy(OpBuilder &builder, Location loc, Value dst, Value src) {
-  builder.create<emitc::CallOp>(loc, TypeRange(), "asyncDeepCopy", ArrayAttr(), ArrayAttr(), ValueRange({dst, src}));
-}
-
-/// Generates an alloc (and possibly copy, if the buffer is read).
-static Value genAllocCopy(OpBuilder &builder, Location loc, Value hostMem, int access) {
-  auto alloc = genCreateDeviceMirror(builder, loc, hostMem);
-  Value devMem = alloc.getResult(0);
-  if(access & MRAccess::READ)
-    genDeepCopy(builder, loc, devMem, hostMem);
-  return devMem;
-}
-
-/// Prepares the outlined arguments, passing scalars and buffers in. Here we
-/// assume that the first buffer is the one allocated for output. We create
-/// a set of properly chained asynchronous allocation/copy pairs to increase
-/// overlap before launching the kernel.
-static void genParametersIn(OpBuilder &builder, Location loc,
-                             SmallVectorImpl<Value> &scalars,
-                             SmallVectorImpl<Value> &buffers,
-                             SmallVectorImpl<int> &bufferAccess,
-                             SmallVectorImpl<Value> &args) {
-  // Scalars are passed by value.
-  for (Value s : scalars)
-    args.push_back(s);
-  // Buffers are need to be made visible on device.
-  for (auto i : zip(buffers, bufferAccess)) {
-    Value buffer = std::get<0>(i);
-    int access = std::get<1>(i);
-    args.push_back(genAllocCopy(builder, loc, buffer, access));
+  if (auto constantOp = dyn_cast<arith::ConstantOp>(v.getDefiningOp())) {
+    auto valAttr = constantOp.getValue();
+    if (auto iAttr = valAttr.dyn_cast<IntegerAttr>()) {
+      return iAttr.getValue().isZero();
+    }
+    return false;
   }
+  return false;
 }
 
-/// Finalizes the outlined arguments. The output buffer is copied depending
-/// on the kernel token and then deallocated. All other buffers are simply
-/// deallocated. Then we wait for all operations to complete.
-static void genParametersOut(OpBuilder &builder, Location loc,
-                             SmallVectorImpl<Value> &scalars,
-                             SmallVectorImpl<Value> &buffers,
-                             SmallVectorImpl<int> &bufferAccess,
-                             SmallVectorImpl<Value> &args) {
-  unsigned base = scalars.size();
-  // Go through the buffer (memref-typed) args.
-  // For those that were written to by the parallel,
-  // generate a copy back to the original host buffer.
-  //
-  // For all mirror buffers, deallocate them.
-  // Sequence the output tensor dealloc after it's copied to host.
-  for (unsigned i = base, e = args.size(); i < e; i++) {
-    if(bufferAccess[i - base] & MRAccess::WRITE)
-      genDeepCopy(builder, loc, buffers[i - base], args[i]);
-    genDestroyDeviceMirror(builder, loc, args[i], buffers[i - base]);
+// Is v a compile-time constant integer with value 1?
+bool valueIsIntegerConstantOne(Value v)
+{
+  if (auto constantOp = dyn_cast<arith::ConstantOp>(v.getDefiningOp())) {
+    auto valAttr = constantOp.getValue();
+    if (auto iAttr = valAttr.dyn_cast<IntegerAttr>()) {
+      return iAttr.getValue().isOne();
+    }
+    return false;
   }
+  return false;
 }
 
-static void genKokkosCode(PatternRewriter &rewriter, func::FuncOp func,
-                       scf::ParallelOp forallOp,
-                       SmallVectorImpl<Value> &constants,
-                       SmallVectorImpl<Value> &scalars,
-                       SmallVectorImpl<Value> &buffers) {
-  Block &block = func.getBody().front();
-  rewriter.setInsertionPointToStart(&block);
-
-  // Re-generate the constants, recapture all arguments.
-  unsigned arg = 0;
-  IRMapping irMap;
-  for (Value c : constants)
-    irMap.map(c, rewriter.clone(*c.getDefiningOp())->getResult(0));
-  for (Value s : scalars)
-    irMap.map(s, block.getArgument(arg++));
-  for (Value b : buffers)
-    irMap.map(b, block.getArgument(arg++));
-
-  // Copy the outer scf.parallel to this function, but redefine
-  // all constants, and replace scalars and buffers with corresponding arguments to func.
-  auto newForall = rewriter.clone(*forallOp, irMap);
-  
-  rewriter.create<func::ReturnOp>(forallOp.getLoc(), newForall->getResults());
-}
-
-struct KokkosForallRewriter : public OpRewritePattern<scf::ParallelOp> {
+struct ParallelUnitStepRewriter : public OpRewritePattern<scf::ParallelOp> {
   using OpRewritePattern<scf::ParallelOp>::OpRewritePattern;
 
-  KokkosForallRewriter(MLIRContext *context)
+  ParallelUnitStepRewriter(MLIRContext *context)
       : OpRewritePattern(context) {}
 
-  LogicalResult matchAndRewrite(scf::ParallelOp forallOp,
-                                PatternRewriter &rewriter) const override {
-    // Only run on outermost ParallelOps
-    if(forallOp->getParentOfType<scf::ParallelOp>()) {
-      return failure();
-    }
-    // Do not run on ParallelOps that are already in 
-    auto enclosingFuncName = forallOp->getParentOfType<func::FuncOp>().getSymName();
-    if(enclosingFuncName.starts_with("kokkos_sparse_kernel_"))
-      return failure();
-    // Check the forallOp for operations that can't be executed on device
-    // NOTE: Kokkos emitter will have to check for this again, since we have
-    // no way to mark an scf.parallel as executing in a particular place.
-    bool canBeOffloaded = true;
-    forallOp->walk([&](func::CallOp) {
-        canBeOffloaded = false;
-    });
-    forallOp->walk([&](memref::AllocOp) {
-        canBeOffloaded = false;
-    });
-    forallOp->walk([&](memref::AllocaOp) {
-        canBeOffloaded = false;
-    });
-    if(!canBeOffloaded)
-    {
-      // Leave this scf.parallel unchanged;
-      // it will execute on host (but can still be parallel).
-      return failure();
-    }
-    // Collect every value that is computed outside the parallel loop.
-    SetVector<Value> invariants; // stable iteration!
-    forallOp->walk([&](Operation *op) {
-      // Collect all values of admissible ops.
-      for (OpOperand &o : op->getOpOperands()) {
-        Value val = o.get();
-        Block *block;
-        if (auto arg = dyn_cast<BlockArgument>(val))
-          block = arg.getOwner();
-        else
-          block = val.getDefiningOp()->getBlock();
-        if (!isNestedIn(block, forallOp))
-          invariants.insert(val);
+  LogicalResult matchAndRewrite(scf::ParallelOp op, PatternRewriter &rewriter) const override {
+    // n is the dimensionality of loop (number of lower bounds/upper bounds/steps)
+    int n = op.getNumLoops();
+    // If all lower bounds are 0 and all steps are 1, do nothing
+    bool allUnitAlready = true;
+    for(int i = 0; i < n; i++) {
+      if(!valueIsIntegerConstantZero(op.getLowerBound()[i]) ||
+         !valueIsIntegerConstantOne(op.getStep()[i])) {
+        allUnitAlready = false;
+        break;
       }
-    });
-    // Outline the outside values as proper parameters. Fail when sharing
-    // value between host and device is not straightforward.
-    SmallVector<Value> constants;
-    SmallVector<Value> scalars;
-    SmallVector<Value> buffers;
-    for (Value val : invariants) {
-      Type tp = val.getType();
-      if (val.getDefiningOp<arith::ConstantOp>())
-        constants.push_back(val);
-      else if (isa<FloatType>(tp) || tp.isIntOrIndex())
-        scalars.push_back(val);
-      else if (isa<MemRefType>(tp))
-        buffers.push_back(val);
-      else
-        return failure(); // don't know how to share
     }
-    // Determine the access mode for each buffer
-    // (MRAccess::READ, ::WRITE, or ::READWRITE)
-    // TODO: this does attempt to handle memref subview, cast, flatten, etc.
-    // In these cases, the actual owner of the memory is not the memref
-    // used inside the parallel, but rather some other memref. This is what
-    // needs to be copied to/from device.
-    SmallVector<int> bufferAccess(buffers.size(), 0);
-    WalkResult walkResult = forallOp->walk([&](memref::StoreOp store) -> WalkResult {
-        Value mr = store.getMemref();
-        for(size_t i = 0; i < buffers.size(); i++) {
-          if(buffers[i] == mr) {
-            bufferAccess[i] |= MRAccess::WRITE;
-            return WalkResult::advance();
-          }
-        }
-        // The memref accessed by store should have been found in buffers.
-        // If not, it's an error.
-        return WalkResult::interrupt();
-    });
-    if(walkResult.wasInterrupted()) {
-      return forallOp.emitError("A memref.store inside an scf.parallel accessed an unknown buffer");
+    if(allUnitAlready) {
+      // op did not match pattern; nothing to do
+      return failure();
     }
-    walkResult = forallOp->walk([&](memref::LoadOp load) -> WalkResult {
-        Value mr = load.getMemref();
-        for(size_t i = 0; i < buffers.size(); i++) {
-          if(buffers[i] == mr) {
-            bufferAccess[i] |= MRAccess::READ;
-            return WalkResult::advance();
-          }
-        }
-        // The memref accessed by load should have been found in buffers.
-        // If not, it's an error.
-        return WalkResult::interrupt();
-    });
-    if(walkResult.wasInterrupted()) {
-      return forallOp.emitError("A memref.load inside an scf.parallel accessed an unknown buffer");
+    // Insert zero and one index constants before the ParallelOp
+    rewriter.setInsertionPoint(op);
+    Value zero = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), 0);
+    Value one = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), 1);
+    // Given lower, step, upper:
+    //  - Replace lower with 0
+    //  - Replace upper with (upper - lower + step - 1) / step
+    //  - Replace step with 1
+    //  - Replace all uses of the old induction variable with "lower + i * step" where i is the new induction variable
+    SmallVector<Value> newUppers;
+    for(int i = 0; i < n; i++) {
+      // If this dimension already has lower 0 and step 1, just keep the old upper
+      Value step = op.getStep()[i];
+      Value lower = op.getLowerBound()[i];
+      if(!valueIsIntegerConstantZero(lower) ||
+         !valueIsIntegerConstantOne(step)) {
+        // upper - lower
+        // TODO: does folding automatically eliminate this op if lower is 0?
+        Value newUpper = rewriter.create<arith::SubIOp>(op.getLoc(), op.getUpperBound()[i], lower).getResult();
+        // upper - lower + step
+        newUpper = rewriter.create<arith::AddIOp>(op.getLoc(), newUpper, step).getResult();
+        // upper - lower + step - 1
+        newUpper = rewriter.create<arith::SubIOp>(op.getLoc(), newUpper, one).getResult();
+        // (upper - lower + step - 1) / step
+        newUpper = rewriter.create<arith::DivUIOp>(op.getLoc(), newUpper, step).getResult();
+        newUppers.push_back(newUpper);
+      }
+      else {
+        // Leave upper the same
+        newUppers.push_back(op.getUpperBound()[i]);
+      }
     }
-    // Pass outlined non-constant values.
-    Location loc = forallOp->getLoc();
-    SmallVector<Value> args;
-    genParametersIn(rewriter, loc, scalars, buffers, bufferAccess, args);
-    auto saveIp = rewriter.saveInsertionPoint();
-    ModuleOp module = forallOp->getParentOfType<ModuleOp>();
-    auto func = genKokkosFunc(rewriter, module, forallOp, args);
-    genKokkosCode(rewriter, func, forallOp, constants, scalars, buffers);
-    // Move the rewriter back to the kernel launch site
-    rewriter.restoreInsertionPoint(saveIp);
-    // Replace the original forallOp with a call to the kernel function.
-    // This includes replacing all uses of forallOp's results with the results of the call.
-    auto kernelCall = rewriter.create<func::CallOp>(loc, func, args);
-    // Finalize the outlined arguments.
-    genParametersOut(rewriter, loc, scalars, buffers, bufferAccess, args);
-    // Lastly, add a Kokkos::fence() to make sure the kernel
-    // and following deep copy have completed
-    rewriter.create<emitc::CallOp>(loc, TypeRange(),
-        "Kokkos::DefaultExecutionSpace().fence", ArrayAttr(), ArrayAttr(), ValueRange());
-    rewriter.replaceOp(forallOp, kernelCall.getResults());
+    //TODO: they renamed this to startOpModification in upstream
+    rewriter.startRootUpdate(op);
+    //rewriter.startOpModification(op);
+    auto lowers = op.getLowerBoundMutable();
+    auto uppers = op.getUpperBoundMutable();
+    auto steps = op.getStepMutable();
+    auto& body = op.getLoopBody();
+    auto inductionVars = op.getInductionVars();
+    rewriter.setInsertionPointToStart(&body.front());
+    for(int i = 0; i < n; i++) {
+      Value oldLower = lowers[i];
+      Value oldUpper = uppers[i];
+      Value oldStep = steps[i];
+      Value induction = inductionVars[i];
+      // Skip this dimension is nothing is changing
+      if(!valueIsIntegerConstantZero(oldLower) ||
+         !valueIsIntegerConstantOne(oldStep)) {
+        continue;
+      }
+      // Compute lower + i * step (old lower and step, and i is the induction var)
+      // Then replace all other uses of the old induction variable (except this expression!)
+      auto replacementException = rewriter.create<arith::MulIOp>(op.getLoc(), induction, oldStep);
+      Value inductionReplacement = rewriter.create<arith::AddIOp>(op.getLoc(), oldLower, replacementException.getResult()).getResult();
+      rewriter.replaceAllUsesExcept(induction, inductionReplacement, replacementException);
+      // Finally, update the loop's bounds
+      lowers[i] = zero;
+      uppers[i] = newUppers[i];
+      steps[i] = one;
+    }
+    //TODO: they renamed this to finalizeOpModification upstream
+    rewriter.finalizeRootUpdate(op);
+    //rewriter.finalizeOpModification(op);
     return success();
-  }
-
-private:
-  // Helper method to see if block appears in given loop.
-  static bool isNestedIn(Block *block, scf::ParallelOp forallOp) {
-    for (Operation *o = block->getParentOp(); o; o = o->getParentOp()) {
-      if (o == forallOp)
-        return true;
-    }
-    return false;
-  }
-
-  static bool isNestedIn(Block *block, kokkos::ParallelOp parOp) {
-    for (Operation *o = block->getParentOp(); o; o = o->getParentOp()) {
-      if (o == parOp)
-        return true;
-    }
-    return false;
   }
 };
 
 } // namespace
 
-void mlir::populateSparseKokkosCodegenPatterns(RewritePatternSet &patterns) {
-  patterns.add<KokkosForallRewriter>(patterns.getContext());
+void mlir::populateParallelUnitStepPatterns(RewritePatternSet &patterns)
+{
+  patterns.add<ParallelUnitStepRewriter>(patterns.getContext());
+}
+
+void mlir::populateKokkosLoopMappingPatterns(RewritePatternSet &patterns)
+{
+  //patterns.add<KokkosLoopMappingRewriter>(patterns.getContext());
+}
+
+void mlir::populateKokkosMemorySpaceAssignmentPatterns(RewritePatternSet &patterns)
+{
+  //patterns.add<KokkosMemorySpaceRewriter>(patterns.getContext());
+}
+
+void mlir::populateKokkosDualViewManagementPatterns(RewritePatternSet &patterns)
+{
+  //patterns.add<KokkosDualViewRewriter>(patterns.getContext());
 }
 

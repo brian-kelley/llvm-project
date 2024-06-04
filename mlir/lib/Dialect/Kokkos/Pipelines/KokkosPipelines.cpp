@@ -46,12 +46,16 @@ void mlir::kokkos::buildSparseKokkosCompiler(
   pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
   pm.addNestedPass<func::FuncOp>(
       mlir::bufferization::createFinalizingBufferizePass());
-  pm.addPass(createSparseKokkosCodegenPass());
   pm.addNestedPass<func::FuncOp>(createConvertLinalgToLoopsPass());
   pm.addNestedPass<func::FuncOp>(createConvertVectorToSCFPass());
   pm.addNestedPass<func::FuncOp>(memref::createExpandReallocPass());
   pm.addPass(memref::createExpandStridedMetadataPass());
   pm.addPass(createLowerAffinePass());
+  // Lower SCF to Kokkos dialect
+  pm.addPass(createParallelUnitStepPass());
+  pm.addPass(createKokkosLoopMappingPass());
+  pm.addPass(createKokkosMemorySpaceAssignmentPass());
+  pm.addPass(createKokkosDualViewManagementPass());
   pm.addPass(createReconcileUnrealizedCastsPass());
 }
 
