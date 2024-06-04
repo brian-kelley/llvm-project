@@ -24,7 +24,6 @@ using namespace mlir;
 
 namespace {
 
-/*
 // Enum representing memref access types.
 // This is meant to be used as a bitfield (READ | WRITE == READWRITE)
 enum MRAccess
@@ -302,70 +301,4 @@ private:
     return false;
   }
 };
-*/
-
-// Is v a compile-time constant integer with value 1?
-bool valueIsIntegerConstant1(Value v)
-{
-  if (auto constantOp = dyn_cast<arith::ConstantOp>(v.getDefiningOp())) {
-    auto valAttr = constantOp.getValue();
-    if (auto iAttr = valAttr.dyn_cast<IntegerAttr>()) {
-      return iAttr.getValue().isOne();
-    }
-    return false;
-  }
-  return false;
-}
-
-struct ParallelUnitStepRewriter : public OpRewritePattern<scf::ParallelOp> {
-  using OpRewritePattern<scf::ParallelOp>::OpRewritePattern;
-
-  ParallelUnitStepRewriter(MLIRContext *context)
-      : OpRewritePattern(context) {}
-
-  LogicalResult matchAndRewrite(scf::ParallelOp op, PatternRewriter &rewriter) const override {
-    // n is the dimensionality of loop (number of lower bounds/upper bounds/steps)
-    int n = op.getStep().size();
-    // If all step sizes are already unit constants, do nothing
-    bool allUnitAlready = true;
-    for(Value& step : op.getStep()) {
-      if(!valueIsIntegerConstant1(step)) {
-        allUnitAlready = false;
-        break;
-      }
-    }
-    if(allUnitAlready) {
-      // op did not match pattern; nothing to do
-      return failure();
-    }
-    // Given lower, step, upper:
-    //  - Replace lower with 0
-    //  - Replace upper with (upper - lower + step - 1) / step
-    //  - Replace step with 1
-    //  - Replace all uses of the old induction variable with "lower + i * step" where i is the new induction variable
-    return success();
-  }
-};
-
-} // namespace
-
-void mlir::populateParallelUnitStepPatterns(RewritePatternSet &patterns)
-{
-  patterns.add<ParallelUnitStepRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosLoopMappingPatterns(RewritePatternSet &patterns)
-{
-  patterns.add<KokkosLoopMappingRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosMemorySpaceAssignmentPatterns(RewritePatternSet &patterns)
-{
-  patterns.add<KokkosMemorySpaceRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosDualViewManagementPatterns(RewritePatternSet &patterns)
-{
-  patterns.add<KokkosDualViewRewriter>(patterns.getContext());
-}
 

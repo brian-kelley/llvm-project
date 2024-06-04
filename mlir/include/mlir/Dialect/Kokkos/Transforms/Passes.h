@@ -26,8 +26,17 @@ namespace mlir {
 #define GEN_PASS_DECL
 #include "mlir/Dialect/Kokkos/Transforms/Passes.h.inc"
 
-void populateSparseKokkosCodegenPatterns(RewritePatternSet &patterns);
-std::unique_ptr<Pass> createSparseKokkosCodegenPass();
+void populateParallelUnitStepPatterns(RewritePatternSet &patterns);
+std::unique_ptr<Pass> createParallelUnitStepPass();
+
+void populateKokkosLoopMappingPatterns(RewritePatternSet &patterns);
+std::unique_ptr<Pass> createKokkosLoopMappingPass();
+
+void populateKokkosMemorySpaceAssignmentPatterns(RewritePatternSet &patterns);
+std::unique_ptr<Pass> createKokkosMemorySpaceAssignmentPass();
+
+void populateKokkosDualViewManagementPatterns(RewritePatternSet &patterns);
+std::unique_ptr<Pass> createKokkosDualViewManagementPass();
 
 //===----------------------------------------------------------------------===//
 // Registration.
