@@ -115,7 +115,6 @@ struct ParallelUnitStepRewriter : public OpRewritePattern<scf::ParallelOp> {
     rewriter.setInsertionPointToStart(&body.front());
     for(int i = 0; i < n; i++) {
       Value oldLower = lowers[i];
-      Value oldUpper = uppers[i];
       Value oldStep = steps[i];
       Value induction = inductionVars[i];
       // Skip this dimension is nothing is changing
