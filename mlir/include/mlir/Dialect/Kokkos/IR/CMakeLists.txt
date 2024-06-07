@@ -12,4 +12,4 @@ add_mlir_dialect(KokkosOps kokkos)
 #mlir_tablegen(KokkosTypes.cpp.inc -gen-typedef-defs)
 #add_public_tablegen_target(MLIRKokkosTypesIncGen)
 
-add_mlir_doc(KokkosOps KokkosOps Dialects/ -gen-dialect-doc)
+add_mlir_doc(KokkosOps Kokkos Dialects/ -gen-dialect-doc)

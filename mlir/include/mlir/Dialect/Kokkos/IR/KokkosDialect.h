@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLIR_DIALECT_KOKKOS_IR_KOKKOS_H
-#define MLIR_DIALECT_KOKKOS_IR_KOKKOS_H
+#ifndef MLIR_DIALECT_KOKKOS_DIALECT_H
+#define MLIR_DIALECT_KOKKOS_DIALECT_H
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -26,9 +26,6 @@
 #include "mlir/Dialect/Kokkos/IR/KokkosOpsDialect.h.inc"
 #include "mlir/Dialect/Kokkos/IR/KokkosOpsEnums.h.inc"
 
-#define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/Kokkos/IR/KokkosAttrDefs.h.inc"
-
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Kokkos/IR/KokkosOps.h.inc"
 
@@ -40,4 +37,4 @@ namespace kokkos {
 } // namespace kokkos 
 } // namespace mlir
 
-#endif // MLIR_DIALECT_KOKKOS_IR_KOKKOS_H
+#endif // MLIR_DIALECT_KOKKOS_DIALECT_H
