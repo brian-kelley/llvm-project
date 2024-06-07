@@ -36,6 +36,7 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/IRDL/IR/IRDL.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
@@ -106,6 +107,7 @@ inline void registerAllDialects(DialectRegistry &registry) {
                   gpu::GPUDialect,
                   index::IndexDialect,
                   irdl::IRDLDialect,
+                  kokkos::KokkosDialect,
                   linalg::LinalgDialect,
                   LLVM::LLVMDialect,
                   math::MathDialect,

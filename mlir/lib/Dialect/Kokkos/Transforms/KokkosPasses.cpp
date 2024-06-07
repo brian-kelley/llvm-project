@@ -11,7 +11,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
-#include "mlir/Dialect/Kokkos/IR/Kokkos.h"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.h"
 #include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"

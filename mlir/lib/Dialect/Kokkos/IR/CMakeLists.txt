@@ -5,10 +5,7 @@ add_mlir_dialect_library(MLIRKokkosDialect
    ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/Kokkos
 
    DEPENDS
-   MLIRKokkosOpsIncGen
-   MLIRLinalgOpsEnumsIncGen
-   MLIRKokkosOpsAttributesIncGen
-   MLIRKokkosAttrDefsIncGen
+   MLIRKokkosIncGen
 
    LINK_LIBS PUBLIC
    MLIRDialect

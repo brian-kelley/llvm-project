@@ -19,7 +19,7 @@
 #include "mlir/Dialect/PartTensor/Transforms/Passes.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/SparseTensor/Transforms/Passes.h"
-#include "mlir/Dialect/Kokkos/IR/Kokkos.h"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.h"
 #include "mlir/Dialect/Kokkos/Transforms/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"

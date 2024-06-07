@@ -23,11 +23,11 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include <optional>
 
-#include "mlir/Dialect/Kokkos/IR/KokkosOpsDialect.h.inc"
-#include "mlir/Dialect/Kokkos/IR/KokkosOpsEnums.h.inc"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.h.inc"
+#include "mlir/Dialect/Kokkos/IR/KokkosEnums.h.inc"
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/Kokkos/IR/KokkosOps.h.inc"
+#include "mlir/Dialect/Kokkos/IR/Kokkos.h.inc"
 
 namespace mlir {
 namespace kokkos {

@@ -11,18 +11,18 @@
 
 include "mlir/Pass/PassBase.td"
 
-def ParallelUnitStep : Pass<"parallel-unit-step", "ModuleOp"> {
-  let summary = "Rewrites scf.parallel ops to have constant, unit step size in all dimensions";
+def ParallelUnitStep : Pass<"parallel-unit-step"> {
+  let summary = "Rewrites scf.parallel ops to have lower bound 0 and step size 1 in all dimensions";
   let description = [{
   }];
-  let constructor = "mlir::createKokkosLoopMappingPass()";
+  let constructor = "mlir::createParallelUnitStepPass()";
   let dependentDialects = [
     "arith::ArithDialect",
     "scf::SCFDialect"
   ];
 }
 
-def KokkosLoopMapping : Pass<"kokkos-loop-mapping", "ModuleOp"> {
+def KokkosLoopMapping : Pass<"kokkos-loop-mapping"> {
   let summary = "Maps nested SCF parallel loops to Kokkos parallel loops";
   let description = [{
   }];
@@ -35,7 +35,7 @@ def KokkosLoopMapping : Pass<"kokkos-loop-mapping", "ModuleOp"> {
   ];
 }
 
-def KokkosMemorySpaceAssignment : Pass<"kokkos-assign-memory-spaces", "ModuleOp"> {
+def KokkosMemorySpaceAssignment : Pass<"kokkos-assign-memory-spaces"> {
   let summary = "Determines the MemorySpace attributes for each memref value";
   let description = [{
   }];
@@ -48,7 +48,7 @@ def KokkosMemorySpaceAssignment : Pass<"kokkos-assign-memory-spaces", "ModuleOp"
   ];
 }
 
-def KokkosDualViewManagement : Pass<"kokkos-dualview-management", "ModuleOp"> {
+def KokkosDualViewManagement : Pass<"kokkos-dualview-management"> {
   let summary = "Insert sync and modify operations for DualView-typed memrefs";
   let description = [{
   }];

@@ -70,6 +70,7 @@ inline void registerAllPasses() {
   registerGPUPasses();
   registerGpuSerializeToCubinPass();
   registerGpuSerializeToHsacoPass();
+  registerKokkosPasses();
   registerLinalgPasses();
   registerNVGPUPasses();
   registerSparseTensorPasses();

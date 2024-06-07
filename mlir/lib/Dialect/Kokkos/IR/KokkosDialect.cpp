@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/Kokkos/IR/Kokkos.h"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.h"
 #include <utility>
 
 #include "mlir/IR/Dialect.h"
@@ -21,22 +21,22 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
 
-#include "mlir/Dialect/Kokkos/IR/KokkosOpsEnums.cpp.inc"
+#include "mlir/Dialect/Kokkos/IR/KokkosEnums.cpp.inc"
 
-#define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/Kokkos/IR/KokkosAttrDefs.cpp.inc"
+//#define GET_ATTRDEF_CLASSES
+//#include "mlir/Dialect/Kokkos/IR/KokkosAttrDefs.cpp.inc"
 
 using namespace mlir;
 using namespace mlir::kokkos;
 
 void KokkosDialect::initialize() {
-  addAttributes<
-#define GET_ATTRDEF_LIST
-#include "mlir/Dialect/Kokkos/IR/KokkosAttrDefs.cpp.inc"
-      >();
+//  addAttributes<
+//#define GET_ATTRDEF_LIST
+//#include "mlir/Dialect/Kokkos/IR/KokkosAttrDefs.cpp.inc"
+//      >();
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/Kokkos/IR/KokkosOps.cpp.inc"
+#include "mlir/Dialect/Kokkos/IR/Kokkos.cpp.inc"
       >();
 }
 
@@ -250,9 +250,9 @@ LogicalResult ParallelOp::verify() {
 }
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/Kokkos/IR/KokkosOps.cpp.inc"
+#include "mlir/Dialect/Kokkos/IR/Kokkos.cpp.inc"
 
-#include "mlir/Dialect/Kokkos/IR/KokkosOpsDialect.cpp.inc"
+#include "mlir/Dialect/Kokkos/IR/KokkosDialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // convenience methods.
