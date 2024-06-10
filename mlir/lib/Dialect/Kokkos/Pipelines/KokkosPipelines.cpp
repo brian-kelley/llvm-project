@@ -57,6 +57,9 @@ void mlir::kokkos::buildSparseKokkosCompiler(
   pm.addPass(createKokkosMemorySpaceAssignmentPass());
   pm.addPass(createKokkosDualViewManagementPass());
   pm.addPass(createReconcileUnrealizedCastsPass());
+  // Apply CSE (common subexpression elimination) now, since the
+  // output of this pipeline gets fed directly into the Kokkos C++ emitter.
+  pm.addPass(createCSEPass());
 }
 
 //===----------------------------------------------------------------------===//
@@ -70,3 +73,4 @@ void mlir::kokkos::registerKokkosPipelines() {
       " sparse-tensor type, and lowering it to dialects compatible with the Kokkos emitter",
       buildSparseKokkosCompiler);
 }
+
