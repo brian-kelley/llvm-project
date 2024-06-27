@@ -60,10 +60,9 @@ def Kokkos_ParallelLevel : I64EnumAttr<
     "ParallelLevel", "",
     [
       I64EnumAttrCase<"RangePolicy", 0, "range">,
-      I64EnumAttrCase<"TeamPolicy", 1, "team">,
-      I64EnumAttrCase<"TeamVector", 2, "team_vector">,
-      I64EnumAttrCase<"TeamThread", 3, "team_thread">,
-      I64EnumAttrCase<"ThreadVector", 4, "thread_vector">
+      I64EnumAttrCase<"TeamVector", 1, "team_vector">,
+      I64EnumAttrCase<"TeamThread", 2, "team_thread">,
+      I64EnumAttrCase<"ThreadVector", 3, "thread_vector">
     ]> {
   let cppNamespace = "::mlir::kokkos";
 }
@@ -94,7 +93,6 @@ def ParallelOp : Kokkos_Op<"parallel",
 
   let arguments = (ins Kokkos_ExecutionSpace:$executionSpace,
                        Kokkos_ParallelLevel:$parallelLevel,
-                       Variadic<Index>:$lowerBound,
                        Variadic<Index>:$upperBound,
                        Variadic<AnyType>:$initVals);
   let results = (outs Variadic<AnyType>:$results);
@@ -102,11 +100,11 @@ def ParallelOp : Kokkos_Op<"parallel",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "::mlir::kokkos::ExecutionSpace":$executionSpace, "::mlir::kokkos::ParallelLevel":$parallelLevel, "ValueRange":$lowerBounds, "ValueRange":$upperBounds,
+    OpBuilder<(ins "::mlir::kokkos::ExecutionSpace":$executionSpace, "::mlir::kokkos::ParallelLevel":$parallelLevel, "ValueRange":$upperBounds,
       "ValueRange":$initVals,
       CArg<"function_ref<void (OpBuilder &, Location, ValueRange, ValueRange)>",
            "nullptr">:$bodyBuilderFn)>,
-    OpBuilder<(ins "::mlir::kokkos::ExecutionSpace":$executionSpace, "::mlir::kokkos::ParallelLevel":$parallelLevel, "ValueRange":$lowerBounds, "ValueRange":$upperBounds,
+    OpBuilder<(ins "::mlir::kokkos::ExecutionSpace":$executionSpace, "::mlir::kokkos::ParallelLevel":$parallelLevel, "ValueRange":$upperBounds,
       CArg<"function_ref<void (OpBuilder &, Location, ValueRange)>",
            "nullptr">:$bodyBuilderFn)>,
   ];
@@ -115,11 +113,51 @@ def ParallelOp : Kokkos_Op<"parallel",
     ValueRange getInductionVars() {
       return getBody()->getArguments();
     }
-    unsigned getNumLoops() { return getLowerBound().size(); }
+    unsigned getNumLoops() { return getUpperBound().size(); }
     unsigned getNumReductions() { return getInitVals().size(); }
   }];
 
-  let hasCanonicalizer = 1;
+  let hasCanonicalizer = 0;
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def TeamPolicyParallelOp : Kokkos_Op<"team_parallel",
+    [AutomaticAllocationScope,
+     DeclareOpInterfaceMethods<LoopLikeOpInterface>,
+     RecursiveMemoryEffects,
+     DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+     SingleBlockImplicitTerminator<"scf::YieldOp">]> {
+  let summary = "Kokkos TeamPolicy parallel for/reduce";
+  let description = [{
+  }];
+
+  let arguments = (ins Index:$leagueSize,
+                       Index:$teamSize,
+                       Index:$vectorLength,
+                       Variadic<AnyType>:$initVals);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$region);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "Value":$leagueSize, "Value":$teamSize, "Value":$vectorLength, 
+      "ValueRange":$initVals,
+      CArg<"function_ref<void (OpBuilder &, Location, ValueRange, ValueRange)>",
+           "nullptr">:$bodyBuilderFn)>,
+    OpBuilder<(ins "Value":$leagueSize, "Value":$teamSize, "Value":$vectorLength,
+      CArg<"function_ref<void (OpBuilder &, Location, ValueRange)>",
+           "nullptr">:$bodyBuilderFn)>,
+  ];
+
+  let extraClassDeclaration = [{
+    ValueRange getInductionVars() {
+      return getBody()->getArguments();
+    }
+    unsigned getNumReductions() { return getInitVals().size(); }
+  }];
+
+  let hasCanonicalizer = 0;
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }

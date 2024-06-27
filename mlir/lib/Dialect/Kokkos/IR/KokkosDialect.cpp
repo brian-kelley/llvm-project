@@ -41,24 +41,22 @@ void KokkosDialect::initialize() {
 }
 
 void ParallelOp::build(
-    OpBuilder &builder, OperationState &result, ::mlir::kokkos::ExecutionSpace executionSpace, ::mlir::kokkos::ParallelLevel parallelLevel, ValueRange lowerBounds,
+    OpBuilder &builder, OperationState &result, ::mlir::kokkos::ExecutionSpace executionSpace, ::mlir::kokkos::ParallelLevel parallelLevel,
     ValueRange upperBounds, ValueRange initVals,
     function_ref<void(OpBuilder &, Location, ValueRange, ValueRange)>
         bodyBuilderFn) {
-  result.addOperands(lowerBounds);
   result.addOperands(upperBounds);
   result.addOperands(initVals);
   result.addAttribute(
       ParallelOp::getOperandSegmentSizeAttr(),
-      builder.getDenseI32ArrayAttr({static_cast<int32_t>(lowerBounds.size()),
-                                    static_cast<int32_t>(upperBounds.size()),
+      builder.getDenseI32ArrayAttr({static_cast<int32_t>(upperBounds.size()),
                                     static_cast<int32_t>(initVals.size())}));
   result.addAttribute("executionSpace", ExecutionSpaceAttr::get(builder.getContext(), executionSpace));
   result.addAttribute("parallelLevel", ParallelLevelAttr::get(builder.getContext(), parallelLevel));
   result.addTypes(initVals.getTypes());
 
   OpBuilder::InsertionGuard guard(builder);
-  unsigned numIVs = lowerBounds.size();
+  unsigned numIVs = upperBounds.size();
   SmallVector<Type, 8> argTypes(numIVs, builder.getIndexType());
   SmallVector<Location, 8> argLocs(numIVs, result.location);
   Region *bodyRegion = result.addRegion();
@@ -74,9 +72,8 @@ void ParallelOp::build(
 }
 
 void ParallelOp::build(
-    OpBuilder &builder, OperationState &result, ::mlir::kokkos::ExecutionSpace executionSpace, ::mlir::kokkos::ParallelLevel parallelLevel, ValueRange lowerBounds,
-    ValueRange upperBounds,
-    function_ref<void(OpBuilder &, Location, ValueRange)> bodyBuilderFn) {
+    OpBuilder &builder, OperationState &result, ::mlir::kokkos::ExecutionSpace executionSpace, ::mlir::kokkos::ParallelLevel parallelLevel,
+    ValueRange upperBounds, function_ref<void(OpBuilder &, Location, ValueRange)> bodyBuilderFn) {
   // Only pass a non-null wrapper if bodyBuilderFn is non-null itself. Make sure
   // we don't capture a reference to a temporary by constructing the lambda at
   // function level.
@@ -89,8 +86,7 @@ void ParallelOp::build(
   if (bodyBuilderFn)
     wrapper = wrappedBuilderFn;
 
-  build(builder, result, executionSpace, parallelLevel, lowerBounds, upperBounds, ValueRange(),
-        wrapper);
+  build(builder, result, executionSpace, parallelLevel, upperBounds, ValueRange(), wrapper);
 }
 
 Region &ParallelOp::getLoopBody() { return getRegion(); }
@@ -103,15 +99,8 @@ ParseResult ParallelOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
 
   // Parse loop bounds.
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> lower;
-  if (parser.parseEqual() ||
-      parser.parseOperandList(lower, ivs.size(),
-                              OpAsmParser::Delimiter::Paren) ||
-      parser.resolveOperands(lower, builder.getIndexType(), result.operands))
-    return failure();
-
   SmallVector<OpAsmParser::UnresolvedOperand, 4> upper;
-  if (parser.parseKeyword("to") ||
+  if (parser.parseArrow() ||
       parser.parseOperandList(upper, ivs.size(),
                               OpAsmParser::Delimiter::Paren) ||
       parser.resolveOperands(upper, builder.getIndexType(), result.operands))
@@ -138,8 +127,7 @@ ParseResult ParallelOp::parse(OpAsmParser &parser, OperationState &result) {
   // Set `operandSegmentSizes` attribute.
   result.addAttribute(
       ParallelOp::getOperandSegmentSizeAttr(),
-      builder.getDenseI32ArrayAttr({static_cast<int32_t>(lower.size()),
-                                    static_cast<int32_t>(upper.size()),
+      builder.getDenseI32ArrayAttr({static_cast<int32_t>(upper.size()),
                                     static_cast<int32_t>(initVals.size())}));
 
   // Parse attributes.
@@ -154,8 +142,7 @@ ParseResult ParallelOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 void ParallelOp::print(OpAsmPrinter &p) {
-  p << " (" << getBody()->getArguments() << ") = (" << getLowerBound()
-    << ") to (" << getUpperBound() << ")";
+  p << " (" << getBody()->getArguments() << ") -> (" << getUpperBound() << ")";
   if (!getInitVals().empty())
     p << " init (" << getInitVals() << ")";
   p.printOptionalArrowTypeList(getResultTypes());
@@ -165,8 +152,6 @@ void ParallelOp::print(OpAsmPrinter &p) {
       (*this)->getAttrs(),
       /*elidedAttrs=*/ParallelOp::getOperandSegmentSizeAttr());
 }
-
-void ParallelOp::getCanonicalizationPatterns(RewritePatternSet &, MLIRContext *) {}
 
 void ParallelOp::getSuccessorRegions(
     RegionBranchPoint point, SmallVectorImpl<RegionSuccessor> &regions) {
@@ -193,16 +178,14 @@ static TerminatorTy verifyAndGetTerminator(Operation *op, Region &region,
 }
 
 LogicalResult ParallelOp::verify() {
-  // Check that there is at least one value in lowerBound, upperBound.
-  // It is sufficient to test only lower bound, because it is ensured already that the
-  // number of elements in lowerBound and upperBound are the same.
-  if (getLowerBound().empty() || getUpperBound().empty())
+  // Check that there is at least one value in upperBound.
+  if (getUpperBound().empty())
     return emitOpError(
-        "needs at least one tuple element for lowerBound and upperBound");
-  auto loopDim = getLowerBound().size();
+        "needs at least one tuple element for upperBound");
+  auto loopDim = getUpperBound().size();
 
   // Check that the body defines the same number of block arguments as there
-  // are lower and upper bounds.
+  // are upper bounds.
   Block *body = getBody();
   if (body->getNumArguments() != loopDim)
     return emitOpError() << "expects the same number of induction variables: "

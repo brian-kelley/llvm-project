@@ -1,4 +1,4 @@
-//===- KokkosPatterns.cpp - Generates Kokkos code --------------------===//
+//===- ParallelUnitStep.cpp - define parallel-unit-step pass pattern --------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,10 +8,6 @@
 
 #include "CodegenUtils.h"
 
-#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
-#include "mlir/Dialect/GPU/IR/GPUDialect.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
@@ -151,20 +147,5 @@ struct ParallelUnitStepRewriter : public OpRewritePattern<scf::ParallelOp> {
 void mlir::populateParallelUnitStepPatterns(RewritePatternSet &patterns)
 {
   patterns.add<ParallelUnitStepRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosLoopMappingPatterns(RewritePatternSet &patterns)
-{
-  //patterns.add<KokkosLoopMappingRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosMemorySpaceAssignmentPatterns(RewritePatternSet &patterns)
-{
-  //patterns.add<KokkosMemorySpaceRewriter>(patterns.getContext());
-}
-
-void mlir::populateKokkosDualViewManagementPatterns(RewritePatternSet &patterns)
-{
-  //patterns.add<KokkosDualViewRewriter>(patterns.getContext());
 }
 
