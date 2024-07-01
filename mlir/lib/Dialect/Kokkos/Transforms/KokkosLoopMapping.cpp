@@ -56,23 +56,77 @@ LogicalResult scfParallelToKokkos(RewriterBase& rewriter, scf::ParallelOp op, ko
   auto bodyBuilder = 
   [&](OpBuilder& builder, Location loc, ValueRange newInductionVars)
   {
-    // Use an IRMap to easily replace old induction vars with new
+    // Use an IRMap to easily replace old induction vars with new in the new loop
     IRMapping irMap;
-    for (Value c : constants)
-      irMap.map(c, rewriter.clone(*c.getDefiningOp())->getResult(0));
+    for(auto it : enumerate(newInductionVars))
+    {
+      int idx = std::get<0>(it);
+      irMap.map(op.getInductionVars()[idx], std::get<1>(it));
+    }
+    // Now clone all the ops in the old loop body into the new one
+    Block& oldBlock = op.getBody().front();
+    for(Operation* op : oldBlock.getOps())
+    {
+      // For ops with side effects, wrap in a Kokkos::single if level == TeamThread.
+      // For the other 3 possible levels, this body is always exected exactly once so no single needed.
+      // "Has side effects" doesn't correspond to an op trait so we have to handle on a case-by-case basis here.
+      bool opHasSideEffects = isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op);
+      if(opHasSideEffects && level == kokkos::ParallelLevel::TeamThread) {
+        auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerThread);
+        auto singleBody = builder.createBlock(single.getRegion());
+        auto savedIP = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(singleBody);
+        builder.clone(*op, irMap);
+        builder.restoreInsertionPoint(savedIP);
+      }
+      else {
+        // Just clone the op into the block directly
+        builder.clone(*op, irMap);
+      }
+    }
   };
-  if(op.getNumReductions())
-  {
-    auto newOp = rewriter.create<kokkos::ParallelOp>(
-      op.getLoc(), exec, kokkos::ParallelLevel::RangePolicy, op.getUpperBound(), op.getInitVals(), bodyBuilder);
-  }
-  else
-  {
-  }
+  auto newOp = rewriter.create<kokkos::ParallelOp>(
+    op.getLoc(), exec, kokkos::ParallelLevel::RangePolicy, op.getUpperBound(), op.getInitVals(), bodyBuilder);
 }
 
 LogicalResult scfParallelToKokkosTeam(RewriterBase& rewriter, scf::ParallelOp op, Value leagueSize, Value teamSize, Value vectorLength)
 {
+  auto bodyBuilder = 
+  [&](OpBuilder& builder, Location loc, ValueRange newInductionVars)
+  {
+    // Use an IRMap to easily replace old induction vars with new in the new loop
+    IRMapping irMap;
+    for(auto it : enumerate(newInductionVars))
+    {
+      int idx = std::get<0>(it);
+      irMap.map(op.getInductionVars()[idx], std::get<1>(it));
+    }
+    // Now clone all the ops in the old loop body into the new one
+    Block& oldBlock = op.getBody().front();
+    for(Operation* op : oldBlock.getOps())
+    {
+      // For ops with side effects, wrap in a Kokkos::single if level == TeamThread.
+      // For the other 3 possible levels, this body is always exected exactly once so no single needed.
+      // "Has side effects" doesn't correspond to an op trait so we have to handle on a case-by-case basis here.
+      bool opHasSideEffects = isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op);
+      if(opHasSideEffects && level == kokkos::ParallelLevel::TeamThread) {
+        auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerThread);
+        auto singleBody = builder.createBlock(single.getRegion());
+        auto savedIP = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(singleBody);
+        builder.clone(*op, irMap);
+        builder.restoreInsertionPoint(savedIP);
+      }
+      else {
+        // Just clone the op into the block directly
+        builder.clone(*op, irMap);
+      }
+    }
+  };
+  auto newOp = rewriter.create<kokkos::ParallelOp>(
+    op.getLoc(), exec, kokkos::ParallelLevel::RangePolicy, op.getUpperBound(), op.getInitVals(), bodyBuilder);
+  rewriter.replaceOp(op, newOp);
+  return success();
 }
 
 LogicalResult scfParallelToSequential(RewriterBase& rewriter, scf::ParallelOp op)
