@@ -197,17 +197,14 @@ def ModifyOp : Kokkos_Op<"modify"> {
   let hasFolder = 0;
 }
 
-// TODO: allow SingleOp to have results (broadcast mode)
-// - Add InferTypeOpAdaptor trait
-// - Add: let results = (outs Variadic<AnyType>:$results);
-
-def SingleOp : Kokkos_Op<"single", [SingleBlockImplicitTerminator<"scf::YieldOp">, RecursiveMemoryEffects, NoRegionArguments]> {
+def SingleOp : Kokkos_Op<"single", [SingleBlockImplicitTerminator<"scf::YieldOp">, RecursiveMemoryEffects, NoRegionArguments, InferTypeOpAdaptor]> {
   let summary = "Restricts a block to execute exactly once per team or per thread";
   let description = [{
     "Restricts a block to execute exactly once per team or per thread"
   }];
 
   let arguments = (ins Kokkos_SingleLevel:$level);
+  let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$region);
 
   let hasFolder = 0;

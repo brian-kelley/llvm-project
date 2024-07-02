@@ -53,84 +53,118 @@ int getParallelNumLevels(scf::ParallelOp op)
 // (not for TeamPolicy loops)
 LogicalResult scfParallelToKokkos(RewriterBase& rewriter, scf::ParallelOp op, kokkos::ExecutionSpace exec, kokkos::ParallelLevel level)
 {
-  auto bodyBuilder = 
-  [&](OpBuilder& builder, Location loc, ValueRange newInductionVars)
-  {
-    // Use an IRMap to easily replace old induction vars with new in the new loop
-    IRMapping irMap;
-    for(auto it : enumerate(newInductionVars))
-    {
-      int idx = std::get<0>(it);
-      irMap.map(op.getInductionVars()[idx], std::get<1>(it));
-    }
-    // Now clone all the ops in the old loop body into the new one
-    Block& oldBlock = op.getBody().front();
-    for(Operation* op : oldBlock.getOps())
-    {
-      // For ops with side effects, wrap in a Kokkos::single if level == TeamThread.
-      // For the other 3 possible levels, this body is always exected exactly once so no single needed.
-      // "Has side effects" doesn't correspond to an op trait so we have to handle on a case-by-case basis here.
-      bool opHasSideEffects = isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op);
-      if(opHasSideEffects && level == kokkos::ParallelLevel::TeamThread) {
-        auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerThread);
-        auto singleBody = builder.createBlock(single.getRegion());
-        auto savedIP = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(singleBody);
-        builder.clone(*op, irMap);
-        builder.restoreInsertionPoint(savedIP);
-      }
-      else {
-        // Just clone the op into the block directly
-        builder.clone(*op, irMap);
-      }
-    }
-  };
+  rewriter.setInsertionPoint(op);
+  // Create the kokkos.parallel but don't populate the body yet
   auto newOp = rewriter.create<kokkos::ParallelOp>(
-    op.getLoc(), exec, kokkos::ParallelLevel::RangePolicy, op.getUpperBound(), op.getInitVals(), bodyBuilder);
+    op.getLoc(), exec, level, op.getUpperBound(), op.getInitVals(), nullptr);
+  // Now inline the old loop's operations into the new loop (replacing all usages of the induction variables)
+  rewriter.inlineBlockBefore(&op.getBody().front(), newOp.getBody().front(), newOp.getBody().op_end(), newOp.getInductionVars());
+  if(level == kokkos::ParallelLevel::TeamThread) {
+    // Ops in this loop are executed in a TeamThread context.
+    // This means that kokkos.single is required around any ops with side effects,
+    // to make sure that they only happen once per thread as intended.
+    SmallVector<Operation*> opsToWrap;
+    // The following is careful to not mutate a sequence (block's operations) while iterating over it.
+    // Instead, it makes a list of ops to replace upfront and then doing all the replacements without iterating.
+    for(Operation* op : newOp.getBody().front().getOperations()) {
+      // TODO: find a more rigorous way to figure out if an op has side effects that we care about
+      if(isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op)) {
+        opsToWrap.push_back(op);
+      }
+    }
+    for(Operation* op : opsToWrap)
+    {
+      rewriter.setInsertionPoint(op);
+      // The single has the same set of result types as the original op
+      auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerThread, op->getResultTypes());
+      auto singleBody = builder.createBlock(single.getRegion());
+      builder.setInsertionPointToStart(singleBody);
+      builder.clone(*op);
+      builder.create<scf::YieldOp>(op->getLoc(), op->getResults());
+      builder.replaceOp(op, single);
+    }
+  }
+  // The new loop is fully constructed.
+  // As a last step, erase the old loop and replace uses of its results with those of the new loop.
+  rewriter.replaceOp(op, newOp);
+  return success();
 }
 
 LogicalResult scfParallelToKokkosTeam(RewriterBase& rewriter, scf::ParallelOp op, Value leagueSize, Value teamSize, Value vectorLength)
 {
-  auto bodyBuilder = 
-  [&](OpBuilder& builder, Location loc, ValueRange newInductionVars)
+  rewriter.setInsertionPoint(op);
+  // Create the kokkos.parallel but don't populate the body yet
+  auto newOp = rewriter.create<kokkos::TeamPolicyParallelOp>(
+    op.getLoc(), leagueSize, teamSize, vectorLength, op.getInitVals(), nullptr);
+  // Now inline the old loop's operations into the new loop (replacing all usages of the induction variables)
+  rewriter.inlineBlockBefore(&op.getBody().front(), newOp.getBody().front(), newOp.getBody().op_end(), newOp.getInductionVars());
+  // Ops in this loop are executed in a Team context.
+  // This means that kokkos.single is required around any ops with side effects,
+  // to make sure that they only happen once per team as intended.
+  SmallVector<Operation*> opsToWrap;
+  // The following is careful to not mutate a sequence (block's operations) while iterating over it.
+  // Instead, it makes a list of ops to replace upfront and then doing all the replacements without iterating.
+  for(Operation* op : newOp.getBody().front().getOperations()) {
+    // TODO: find a more rigorous way to figure out if an op has side effects that we care about
+    if(isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op)) {
+      opsToWrap.push_back(op);
+    }
+  }
+  for(Operation* op : opsToWrap)
   {
-    // Use an IRMap to easily replace old induction vars with new in the new loop
-    IRMapping irMap;
-    for(auto it : enumerate(newInductionVars))
-    {
-      int idx = std::get<0>(it);
-      irMap.map(op.getInductionVars()[idx], std::get<1>(it));
-    }
-    // Now clone all the ops in the old loop body into the new one
-    Block& oldBlock = op.getBody().front();
-    for(Operation* op : oldBlock.getOps())
-    {
-      // For ops with side effects, wrap in a Kokkos::single if level == TeamThread.
-      // For the other 3 possible levels, this body is always exected exactly once so no single needed.
-      // "Has side effects" doesn't correspond to an op trait so we have to handle on a case-by-case basis here.
-      bool opHasSideEffects = isa<memref::StoreOp>(op) || isa<memref::AtomicRMWOp>(op);
-      if(opHasSideEffects && level == kokkos::ParallelLevel::TeamThread) {
-        auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerThread);
-        auto singleBody = builder.createBlock(single.getRegion());
-        auto savedIP = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(singleBody);
-        builder.clone(*op, irMap);
-        builder.restoreInsertionPoint(savedIP);
-      }
-      else {
-        // Just clone the op into the block directly
-        builder.clone(*op, irMap);
-      }
-    }
-  };
-  auto newOp = rewriter.create<kokkos::ParallelOp>(
-    op.getLoc(), exec, kokkos::ParallelLevel::RangePolicy, op.getUpperBound(), op.getInitVals(), bodyBuilder);
+    rewriter.setInsertionPoint(op);
+    // The single has the same set of result types as the original op
+    auto single = builder.create<kokkos::SingleOp>(op->getLoc(), kokkos::SingleLevel::PerTeam, op->getResultTypes());
+    auto singleBody = builder.createBlock(single.getRegion());
+    builder.setInsertionPointToStart(singleBody);
+    builder.clone(*op);
+    builder.create<scf::YieldOp>(op->getLoc(), op->getResults());
+    builder.replaceOp(op, single);
+  }
+  // The new loop is fully constructed.
+  // As a last step, erase the old loop and replace uses of its results with those of the new loop.
   rewriter.replaceOp(op, newOp);
   return success();
 }
 
 LogicalResult scfParallelToSequential(RewriterBase& rewriter, scf::ParallelOp op)
 {
+  rewriter.setInsertionPoint(op);
+  auto newOp = scf::buildLoopNest(
+    op.getLoc(), op.getLowerBound(), op.getUpperBound(), op.getStep(), op.getInitVals(),
+    [&](OpBuilder& builder, Location loc, ValueRange inductionVars, ValueRange args) -> ValueVector
+    {
+      ValueVector results;
+      // Just clone the statements of op's body.
+      // When the scf.reduce is encountered, if any:
+      // - for each of its n regions, promote all normal ops into the loop body
+      // - reduce has n operands, one per reduction. These are partial reductions to update.
+      // - each region i has 1 block, whose 2 args are the partial reductions to join
+      //   - LHS = implicit partial reduction
+      //   - RHS = ith reduce operand (some value computed in the body)
+      // - Replace LHS with the ith loop argument
+      // - just delete all scf.reduce.return inside reduce blocks. Instead append the joined result to results.
+      IRMapping irMap;
+      for (auto p : llvm::zip(op.getInductionVars(), inductionVars)) {
+        irMap.map(std::get<0>(p), std::get<1>(p));
+      }
+      for(Operation* oldOp : op.getBody().front().getOperations()) {
+        if(auto reduce = oldOp.dyn_cast<scf::ReduceOp>()) {
+          
+        }
+        else {
+          auto newOp = builder.clone(oldOp, irMap);
+          for (auto p : llvm::zip(oldOp->getResults(), newOp->getResults())) {
+            irMap.map(std::get<0>(p), std::get<1>(p));
+        }
+      }
+      return results;
+    });
+  // Now inline the old loop's operations into the new loop (replacing all usages of the induction variables)
+  rewriter.inlineBlockBefore(&op.getBody().front(), newOp.getBody().front(), newOp.getBody().op_end(), newOp.getInductionVars());
+  SmallVector<Operation*> opsToWrap;
+  rewriter.replaceOp(op, newOp);
+  return success();
 }
 
 struct KokkosLoopRewriter : public OpRewritePattern<scf::ParallelOp> {
